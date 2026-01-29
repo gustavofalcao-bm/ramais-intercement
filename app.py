@@ -2,24 +2,21 @@ import streamlit as st
 import pandas as pd
 import psycopg2
 from psycopg2 import pool
-import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-import base64
 
 load_dotenv()
 
 # ============================================================================
-# CONFIGURAÇÕES - IDENTIDADE BASE TELCO
+# CONFIGURAÇÕES
 # ============================================================================
 
 st.set_page_config(
-    page_title="OSV Dashboard | Base Telco",
+    page_title="Ramais Intercement | Base Telco",
     page_icon="📞",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 COLORS = {
@@ -27,37 +24,11 @@ COLORS = {
     'secondary': '#5dade2',
     'accent': '#3498db',
     'success': '#4CAF50',
-    'danger': '#E57373',
-    'warning': '#FFB74D',
-    'info': '#64B5F6',
-    'dark_gray': '#616161'
+    'danger': '#E57373'
 }
 
 # ============================================================================
-# FUNÇÕES UTILITÁRIAS
-# ============================================================================
-
-def load_logo(variants):
-    for v in variants:
-        try:
-            with open(v, "rb") as f:
-                return base64.b64encode(f.read()).decode()
-        except:
-            continue
-    return None
-
-def format_number(value):
-    if pd.isna(value):
-        return "0"
-    return f"{int(value):,}".replace(',', '.')
-
-def format_percentage(value):
-    if pd.isna(value):
-        return "0%"
-    return f"{value:.2f}%"
-
-# ============================================================================
-# CSS ESTILIZADO
+# CSS
 # ============================================================================
 
 def aplicar_css():
@@ -71,18 +42,19 @@ def aplicar_css():
         background: linear-gradient(135deg, #e8f4f8 0%, #d4e9f2 100%); 
     }}
 
-    [data-testid="stSidebar"] {{ 
-        background: rgba(30, 58, 95, 0.95) !important; 
-        backdrop-filter: blur(20px);
+    .header-intercement {{
+        background: linear-gradient(135deg, #1e3a5f 0%, #3498db 100%);
+        padding: 2rem;
+        border-radius: 20px;
+        margin-bottom: 2rem;
+        text-align: center;
     }}
-
-    [data-testid="stSidebar"] * {{ color: white !important; }}
 
     .metric-card {{
         background: rgba(255, 255, 255, 0.9);
         backdrop-filter: blur(20px);
-        padding: 2rem 1.5rem;
-        border-radius: 20px;
+        padding: 1.5rem;
+        border-radius: 16px;
         border: 1px solid rgba(93, 173, 226, 0.2);
         box-shadow: 0 8px 32px rgba(30, 58, 95, 0.1);
         transition: all 0.4s ease;
@@ -90,47 +62,74 @@ def aplicar_css():
     }}
 
     .metric-card:hover {{
-        transform: translateY(-8px);
-        box-shadow: 0 20px 60px rgba(93, 173, 226, 0.25);
+        transform: translateY(-5px);
+        box-shadow: 0 15px 50px rgba(93, 173, 226, 0.2);
     }}
 
     .metric-icon {{
-        font-size: 2.5rem;
-        margin-bottom: 0.8rem;
+        font-size: 2.2rem;
+        margin-bottom: 0.5rem;
     }}
 
     .metric-value {{
-        font-size: 2.3rem;
+        font-size: 2rem;
         font-weight: 900;
-        margin: 0.5rem 0;
+        margin: 0.3rem 0;
     }}
 
     .metric-label {{
-        font-size: 0.75rem;
-        color: {COLORS['dark_gray']};
+        font-size: 0.7rem;
+        color: {COLORS['primary']};
         text-transform: uppercase;
-        letter-spacing: 1.2px;
+        letter-spacing: 1px;
         font-weight: 700;
-    }}
-
-    .header-parallax {{
-        background: linear-gradient(135deg, #1e3a5f 0%, #154360 25%, #5dade2 75%, #3498db 100%);
-        background-size: 400% 400%;
-        animation: gradientShift 15s ease infinite;
-        padding: 2rem;
-        border-radius: 20px;
-        margin-bottom: 2rem;
-    }}
-
-    @keyframes gradientShift {{
-        0%, 100% {{ background-position: 0% 50%; }}
-        50% {{ background-position: 100% 50%; }}
     }}
     </style>
     """, unsafe_allow_html=True)
 
 # ============================================================================
-# CONFIGURAÇÃO BANCO DE DADOS
+# SPINNER PREMIUM
+# ============================================================================
+
+def show_loading():
+    return """
+    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100vh; 
+                background: rgba(30, 58, 95, 0.97); display: flex; 
+                flex-direction: column; align-items: center; 
+                justify-content: center; z-index: 9999;">
+        <div style="position: relative; width: 120px; height: 120px;">
+            <div style="position: absolute; width: 120px; height: 120px; 
+                       border: 8px solid rgba(93, 173, 226, 0.1); 
+                       border-top-color: #5dade2; border-radius: 50%; 
+                       animation: spin 1s linear infinite;"></div>
+            <div style="position: absolute; top: 50%; left: 50%; 
+                       transform: translate(-50%, -50%); font-size: 2.5rem;">📞</div>
+        </div>
+        <div style="margin-top: 2rem; font-size: 1.5rem; font-weight: 900; 
+                   color: white; text-transform: uppercase; letter-spacing: 2px;">
+            Carregando Ramais
+        </div>
+    </div>
+    <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+    """
+
+# ============================================================================
+# FUNÇÃO PARA NORMALIZAR BONAME
+# ============================================================================
+
+def normalizar_boname(nome):
+    """Substitui _ por espaço"""
+    if pd.isna(nome):
+        return ""
+    return str(nome).replace('_', ' ')
+
+# ============================================================================
+# BANCO DE DADOS
 # ============================================================================
 
 DB_CONFIG = {
@@ -141,26 +140,32 @@ DB_CONFIG = {
     'port': os.getenv('DB_PORT', '5432'),
 }
 
-QUERY_BY_COMPANY = """
+# Query: Garantir ramais únicos (1 por serviceid)
+QUERY_INTERCEMENT = """
 WITH latest_records AS (
     SELECT DISTINCT ON (st.serviceid)
         st.serviceid,
+        sl.boname,
+        sl.bglinename,
         st.contactregstate,
-        sl.bgname
+        st.lastsync
     FROM osvsubscriberstatus st
     INNER JOIN osvsubscriberlist sl ON st.subscriberid = sl.id
-    WHERE st.lastsync::timestamp >= NOW() - INTERVAL '1 hour'
+    WHERE sl.bgname ILIKE '%intercement%'
+        AND st.lastsync::timestamp >= NOW() - INTERVAL '24 hours'
     ORDER BY st.serviceid, st.lastsync::timestamp DESC
 )
 SELECT 
-    bgname as empresa,
-    COUNT(serviceid) as total_ramais,
-    SUM(CASE WHEN contactregstate = 1 THEN 1 ELSE 0 END) as ramais_ativos,
-    SUM(CASE WHEN contactregstate = 0 THEN 1 ELSE 0 END) as ramais_inativos,
-    ROUND((SUM(CASE WHEN contactregstate = 1 THEN 1 ELSE 0 END)::numeric / NULLIF(COUNT(serviceid), 0) * 100), 2) as taxa_ativacao
+    serviceid,
+    boname,
+    bglinename,
+    CASE 
+        WHEN contactregstate = 1 THEN 'Registrado'
+        ELSE 'Não Registrado'
+    END as status,
+    lastsync::timestamp as ultima_sincronizacao
 FROM latest_records
-GROUP BY bgname
-ORDER BY total_ramais DESC
+ORDER BY boname, serviceid
 """
 
 # ============================================================================
@@ -170,19 +175,24 @@ ORDER BY total_ramais DESC
 @st.cache_resource
 def get_connection_pool():
     try:
-        return psycopg2.pool.SimpleConnectionPool(1, 10, **DB_CONFIG)
+        return psycopg2.pool.SimpleConnectionPool(1, 5, **DB_CONFIG)
     except Exception as e:
-        st.error(f"Erro ao criar pool: {e}")
+        st.error(f"Erro ao conectar: {e}")
         return None
 
 @st.cache_data(ttl=300)
-def get_company_summary():
+def get_ramais_intercement():
     pool = get_connection_pool()
     if not pool:
         return pd.DataFrame()
     conn = pool.getconn()
     try:
-        df = pd.read_sql_query(QUERY_BY_COMPANY, conn)
+        df = pd.read_sql_query(QUERY_INTERCEMENT, conn)
+
+        # Normalizar boname (substituir _ por espaço)
+        if not df.empty and 'boname' in df.columns:
+            df['boname'] = df['boname'].apply(normalizar_boname)
+
         return df
     except Exception as e:
         st.error(f"Erro ao buscar dados: {e}")
@@ -200,19 +210,14 @@ aplicar_css()
 # HEADER
 # ============================================================================
 
-logo_icon = load_logo(['image.jpg', 'BT-Icone.png', 'logo.png'])
-
-st.markdown(f"""
-<div class="header-parallax">
-    <div style="display: flex; align-items: center; gap: 1.5rem;">
-        {"<img src='data:image/png;base64," + logo_icon + "' style='height: 60px; filter: brightness(0) invert(1);'>" if logo_icon else "<div style='font-size: 2.5rem;'>📞</div>"}
-        <div>
-            <h1 style="color: white; font-size: 1.9rem; font-weight: 900; margin: 0;">OSV Dashboard</h1>
-            <p style="color: #aed6f1; font-size: 0.9rem; margin: 0.3rem 0 0 0; font-weight: 600;">
-                Monitoramento de Ramais • Base Telco
-            </p>
-        </div>
-    </div>
+st.markdown("""
+<div class="header-intercement">
+    <h1 style="color: white; font-size: 2rem; font-weight: 900; margin: 0;">
+        📞 Ramais Intercement
+    </h1>
+    <p style="color: #aed6f1; font-size: 0.95rem; margin: 0.5rem 0 0 0; font-weight: 600;">
+        Monitoramento em Tempo Real • Base Telco
+    </p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -220,158 +225,154 @@ st.markdown(f"""
 # BOTÃO ATUALIZAR
 # ============================================================================
 
-col_btn, col_space = st.columns([1, 5])
+col_btn, col_space = st.columns([1, 4])
 with col_btn:
-    if st.button("🔄 Atualizar", type="primary", use_container_width=True):
+    if st.button("🔄 Atualizar Dados", type="primary", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-st.markdown("##")
-
 # ============================================================================
-# CARREGAR DADOS
+# LOADING
 # ============================================================================
 
-with st.spinner("Carregando dados..."):
-    df_companies = get_company_summary()
+loading_placeholder = st.empty()
+loading_placeholder.markdown(show_loading(), unsafe_allow_html=True)
 
-if df_companies.empty:
-    st.error("❌ Nenhum dado disponível")
+try:
+    df_ramais = get_ramais_intercement()
+    loading_placeholder.empty()
+except Exception as e:
+    loading_placeholder.empty()
+    st.error(f"❌ Erro ao carregar dados: {e}")
     st.stop()
 
 # ============================================================================
-# MÉTRICAS
+# CARDS DE MÉTRICAS (NO TOPO)
 # ============================================================================
 
-total_ramais = int(df_companies['total_ramais'].sum())
-total_ativos = int(df_companies['ramais_ativos'].sum())
-total_inativos = int(df_companies['ramais_inativos'].sum())
-taxa_geral = round((total_ativos / total_ramais * 100), 2) if total_ramais > 0 else 0
+if not df_ramais.empty:
+    # Calcular totais
+    total = len(df_ramais)
+    registrados = len(df_ramais[df_ramais['status'] == 'Registrado'])
+    nao_registrados = len(df_ramais[df_ramais['status'] == 'Não Registrado'])
+    taxa = round((registrados / total * 100), 2) if total > 0 else 0
 
-st.subheader("📊 Indicadores Gerais (Última Hora)")
+    # Exibir cards
+    cols = st.columns(4)
 
-cols = st.columns(4)
+    cards = [
+        ("📊", "Total de Ramais", total, COLORS['primary']),
+        ("✅", "Registrados", registrados, COLORS['success']),
+        ("❌", "Não Registrados", nao_registrados, COLORS['danger']),
+        ("📈", "Taxa de Registro", f"{taxa}%", COLORS['accent'])
+    ]
 
-cards = [
-    ("📊", "Total Ramais", total_ramais, COLORS['primary']),
-    ("✅", "Registrados", total_ativos, COLORS['success']),
-    ("❌", "Não Registrados", total_inativos, COLORS['danger']),
-    ("📈", "Taxa de Registro", f"{taxa_geral}%", COLORS['accent'])
-]
+    for i, (icon, label, value, cor) in enumerate(cards):
+        with cols[i]:
+            valor_formatado = f"{value:,}".replace(',', '.') if isinstance(value, int) else value
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-icon" style="color: {cor}">{icon}</div>
+                <div class="metric-value" style="color: {cor}">{valor_formatado}</div>
+                <div class="metric-label">{label}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-for i, (icon, label, value, cor) in enumerate(cards):
-    with cols[i]:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-icon" style="color: {cor}">{icon}</div>
-            <div class="metric-value" style="color: {cor}">{value if isinstance(value, str) else format_number(value)}</div>
-            <div class="metric-label">{label}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-st.info(f"**Total**: {format_number(total_ramais)} ramais | **Registrados**: {format_number(total_ativos)} ({taxa_geral}%) | **Não Registrados**: {format_number(total_inativos)}")
-
-st.markdown("---")
-
-# ============================================================================
-# GRÁFICOS
-# ============================================================================
-
-col_chart1, col_chart2 = st.columns(2)
-
-with col_chart1:
-    st.markdown("### 📈 Top 10 Empresas")
-    top10 = df_companies.head(10).copy()
-
-    fig_bar = px.bar(
-        top10, 
-        x='empresa', 
-        y=['ramais_ativos', 'ramais_inativos'],
-        title='Registrados vs Não Registrados',
-        color_discrete_map={
-            'ramais_ativos': COLORS['accent'],
-            'ramais_inativos': '#aed6f1'
-        },
-        barmode='stack'
-    )
-    fig_bar.update_layout(
-        xaxis_tickangle=-45,
-        height=400,
-        showlegend=True,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)'
-    )
-    st.plotly_chart(fig_bar, use_container_width=True)
-
-with col_chart2:
-    st.markdown("### 🥧 Distribuição por Empresa")
-
-    fig_pie = px.pie(
-        top10, 
-        values='total_ramais', 
-        names='empresa',
-        hole=0.4,
-        color_discrete_sequence=px.colors.sequential.Blues_r
-    )
-    fig_pie.update_traces(
-        textposition='inside',
-        textinfo='percent+label'
-    )
-    fig_pie.update_layout(
-        height=400,
-        showlegend=False,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)'
-    )
-    st.plotly_chart(fig_pie, use_container_width=True)
-
-st.markdown("---")
+    st.markdown("---")
 
 # ============================================================================
-# TABELA
+# TABELA DE RAMAIS
 # ============================================================================
 
-st.subheader("📋 Detalhamento por Empresa")
+if not df_ramais.empty:
+    st.markdown("### 📋 Lista de Ramais")
 
-col_search, col_filter = st.columns([3, 1])
+    # Filtros - ADICIONADO FILTRO POR UNIDADE
+    col_unidade, col_status, col_search = st.columns([2, 1, 2])
 
-with col_search:
-    search_term = st.text_input("🔍 Buscar empresa", placeholder="Digite o nome...")
+    with col_unidade:
+        unidades_disponiveis = ['Todas'] + sorted(df_ramais['boname'].dropna().unique().tolist())
+        unidade_filter = st.selectbox(
+            "🏢 Filtrar por Unidade",
+            options=unidades_disponiveis,
+            key='unidade_filter'
+        )
 
-with col_filter:
-    min_ramais = st.number_input("Min. Ramais", min_value=0, value=0, step=100)
+    with col_status:
+        status_options = ['Todos', 'Registrado', 'Não Registrado']
+        status_filter = st.selectbox(
+            "📊 Status",
+            options=status_options,
+            key='status_filter'
+        )
 
-df_display = df_companies.copy()
-if search_term:
-    df_display = df_display[df_display['empresa'].str.contains(search_term, case=False, na=False)]
-if min_ramais > 0:
-    df_display = df_display[df_display['total_ramais'] >= min_ramais]
+    with col_search:
+        search_term = st.text_input(
+            "🔍 Buscar usuário ou ramal",
+            placeholder="Digite para buscar...",
+            key='search_ramais'
+        )
 
-df_formatted = df_display.copy()
-df_formatted['total_ramais'] = df_formatted['total_ramais'].apply(format_number)
-df_formatted['ramais_ativos'] = df_formatted['ramais_ativos'].apply(format_number)
-df_formatted['ramais_inativos'] = df_formatted['ramais_inativos'].apply(format_number)
-df_formatted['taxa_ativacao'] = df_formatted['taxa_ativacao'].apply(format_percentage)
-df_formatted.columns = ['Empresa', 'Total', 'Registrados', 'Não Registrados', 'Taxa (%)']
+    # Aplicar filtros
+    df_filtered = df_ramais.copy()
 
-st.dataframe(df_formatted, use_container_width=True, hide_index=True, height=400)
+    if unidade_filter != 'Todas':
+        df_filtered = df_filtered[df_filtered['boname'] == unidade_filter]
 
-col_stats, col_download = st.columns([3, 1])
-with col_stats:
-    st.caption(f"📊 Exibindo {len(df_display)} de {len(df_companies)} empresas")
-with col_download:
-    csv = df_companies.to_csv(index=False, encoding='utf-8-sig')
-    st.download_button(
-        "📥 Baixar CSV",
-        csv,
-        f"osv_ramais_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        "text/csv",
-        use_container_width=True
+    if status_filter != 'Todos':
+        df_filtered = df_filtered[df_filtered['status'] == status_filter]
+
+    if search_term:
+        df_filtered = df_filtered[
+            df_filtered['bglinename'].astype(str).str.contains(search_term, case=False, na=False) |
+            df_filtered['serviceid'].astype(str).str.contains(search_term, case=False, na=False)
+        ]
+
+    # Preparar para exibição
+    df_display = df_filtered.copy()
+    df_display = df_display[['boname', 'bglinename', 'serviceid', 'status']]
+    df_display.columns = ['Unidade', 'Usuário', 'Ramal', 'Status']
+
+    # Exibir tabela
+    st.dataframe(
+        df_display,
+        use_container_width=True,
+        hide_index=True,
+        height=550,
+        column_config={
+            "Status": st.column_config.TextColumn(
+                "Status",
+                help="Status de registro do ramal"
+            )
+        }
     )
+
+    # Informações da filtragem
+    st.caption(f"📊 Exibindo {len(df_filtered):,} de {len(df_ramais):,} ramais".replace(',', '.'))
+
+    # Download
+    st.markdown("##")
+    col_download, col_space = st.columns([1, 3])
+    with col_download:
+        csv = df_filtered.to_csv(index=False, encoding='utf-8-sig')
+        st.download_button(
+            "📥 Baixar CSV Completo",
+            csv,
+            f"intercement_ramais_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            "text/csv",
+            use_container_width=True
+        )
+
+else:
+    st.warning("⚠️ Nenhum ramal encontrado para Intercement nas últimas 24 horas")
 
 # ============================================================================
 # RODAPÉ
 # ============================================================================
 
 st.markdown("---")
-st.markdown(f"<p style='text-align:center; color:#7f8c8d; font-size:0.85rem;'>Base Telco © {datetime.now().year} • Todos os direitos reservados</p>", unsafe_allow_html=True)
+st.markdown(f"""
+<p style='text-align:center; color:#7f8c8d; font-size:0.85rem;'>
+    Base Telco © {datetime.now().year} • Dashboard Intercement
+</p>
+""", unsafe_allow_html=True)
